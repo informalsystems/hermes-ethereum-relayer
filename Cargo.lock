@@ -3095,6 +3095,7 @@ dependencies = [
 name = "hermes-sp1-prover-components"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cgp",
  "hermes-prover-components",
  "sp1-prover",

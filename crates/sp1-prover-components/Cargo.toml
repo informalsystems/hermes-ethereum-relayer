@@ -13,6 +13,7 @@ readme = "README.md"
 
 sp1-sdk = { workspace = true, features = ["network-v2"] }
 sp1-prover = { workspace = true }
+anyhow = { workspace = true }
 
 cgp = { workspace = true }
 hermes-prover-components = { workspace = true }

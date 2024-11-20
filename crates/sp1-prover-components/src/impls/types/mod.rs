@@ -1,4 +1,4 @@
 pub mod input;
 pub mod program;
 pub mod proof;
-pub mod prover;
+pub mod provers;
