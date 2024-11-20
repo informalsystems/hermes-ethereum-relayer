@@ -24,6 +24,11 @@ overflow-checks = true
 [workspace.dependencies]
 
 sp1-sdk = { version = "3.0.0", default-features = false }
+sp1-prover = { version = "3.0.0", default-features = false }
+
+hermes-prover-components = { version = "0.1.0" }
+hermes-sp1-prover-components = { version = "0.1.0" }
+hermes-ethereum-chain-components = { version = "0.1.0" }
 
 cgp = { version = "0.1.0" }
 
