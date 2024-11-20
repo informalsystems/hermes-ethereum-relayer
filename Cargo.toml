@@ -23,7 +23,9 @@ overflow-checks = true
 
 [workspace.dependencies]
 
+serde = { version = "1.0.210" }
 anyhow = { version = "1.0.93" }
+alloy = { version = "0.6" }
 sp1-sdk = { version = "3.0.0", default-features = false }
 sp1-prover = { version = "3.0.0", default-features = false }
 
