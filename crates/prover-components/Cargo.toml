@@ -1,5 +1,5 @@
 [package]
-name = "hermes-ethereum-chain-components"
+name = "hermes-prover-components"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -12,8 +12,3 @@ readme = "README.md"
 [dependencies]
 
 cgp = { workspace = true }
-hermes-test-components = { workspace = true }
-hermes-runtime-components = { workspace = true }
-hermes-chain-components = { workspace = true }
-hermes-chain-type-components = { workspace = true }
-hermes-encoding-components = { workspace = true }
