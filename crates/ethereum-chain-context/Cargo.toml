@@ -1,5 +1,5 @@
 [package]
-name = "hermes-ethereum-chain-components"
+name = "hermes-ethereum-chain-context"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -14,8 +14,6 @@ serde = { workspace = true, features = ["derive"] }
 alloy = { workspace = true, features = ["full"] }
 bincode = { workspace = true }
 beacon-api = { workspace = true }
-unionlabs= { workspace = true }
-ics008-wasm-client = { workspace = true }
 
 cgp = { workspace = true }
 hermes-test-components = { workspace = true }
@@ -24,3 +22,4 @@ hermes-chain-components = { workspace = true }
 hermes-chain-type-components = { workspace = true }
 hermes-encoding-components = { workspace = true }
 hermes-cosmos-chain-components = { workspace = true }
+hermes-ethereum-chain-components = { workspace = true }
