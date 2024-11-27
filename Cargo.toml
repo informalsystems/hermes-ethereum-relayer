@@ -127,6 +127,8 @@ hermes-cosmos-wasm-relayer = { git = "https://github.com/informalsystems/hermes-
 hermes-cosmos-test-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }
 hermes-cosmos-encoding-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }
 hermes-cosmos-integration-tests = { git = "https://github.com/informalsystems/hermes-sdk.git" }
+hermes-comet-light-client-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }
+hermes-comet-light-client-context = { git = "https://github.com/informalsystems/hermes-sdk.git" }
 hermes-wasm-test-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }
 hermes-wasm-client-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }
 hermes-wasm-encoding-components = { git = "https://github.com/informalsystems/hermes-sdk.git" }

@@ -15,12 +15,12 @@ where
         HasUpdateClientPayloadType<Chain, UpdateClientPayload = CosmosUpdateClientPayload>,
 {
     async fn build_update_client_message(
-        chain: &Chain,
-        client_id: &Chain::ClientId,
+        _chain: &Chain,
+        _client_id: &Chain::ClientId,
         payload: CosmosUpdateClientPayload,
     ) -> Result<Vec<Chain::Message>, Chain::Error> {
         let header = payload.headers.into_iter().next().unwrap();
-        let encoded_header = bincode::serialize(&header).map_err(Chain::raise_error)?;
+        let _encoded_header = bincode::serialize(&header).map_err(Chain::raise_error)?;
 
         todo!()
     }
