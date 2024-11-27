@@ -4477,6 +4477,7 @@ dependencies = [
  "hermes-runtime-components",
  "hermes-test-components",
  "serde",
+ "unionlabs",
 ]
 
 [[package]]

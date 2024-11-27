@@ -14,6 +14,7 @@ serde = { workspace = true, features = ["derive"] }
 alloy = { workspace = true, features = ["full"] }
 bincode = { workspace = true }
 beacon-api = { workspace = true }
+unionlabs= { workspace = true }
 
 cgp = { workspace = true }
 hermes-error = { workspace = true }

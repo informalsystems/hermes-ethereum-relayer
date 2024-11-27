@@ -13,6 +13,8 @@ use hermes_ethereum_chain_components::traits::fields::beacon::{
 };
 use hermes_ethereum_chain_components::traits::fields::ibc_contract_address::IbcContractAddressGetterComponent;
 use hermes_ethereum_chain_components::traits::fields::provider::AlloyProviderGetter;
+use hermes_ethereum_chain_components::traits::types::beacon_preset::BeaconPresetComponent;
+use unionlabs::ethereum::config::Minimal;
 
 use crate::contexts::error::HandleEthereumChainError;
 
@@ -34,6 +36,7 @@ delegate_components! {
         ErrorTypeComponent: ProvideHermesError,
         ErrorRaiserComponent: UseDelegate<HandleEthereumChainError>,
         AddressTypeComponent: WithType<Address>,
+        BeaconPresetComponent: WithType<Minimal>,
         [
             BeaconApiClientGetterComponent,
             IbcContractAddressGetterComponent,
