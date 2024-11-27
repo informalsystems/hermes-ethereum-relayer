@@ -12,6 +12,7 @@ readme = "README.md"
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 alloy = { workspace = true, features = ["full"] }
+bincode = { workspace = true }
 
 cgp = { workspace = true }
 hermes-test-components = { workspace = true }
@@ -19,3 +20,4 @@ hermes-runtime-components = { workspace = true }
 hermes-chain-components = { workspace = true }
 hermes-chain-type-components = { workspace = true }
 hermes-encoding-components = { workspace = true }
+hermes-cosmos-chain-components = { workspace = true }
