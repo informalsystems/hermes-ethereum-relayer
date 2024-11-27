@@ -1,10 +1,20 @@
 use alloy::primitives::Address;
 use alloy::providers::Provider;
 use beacon_api::client::BeaconApiClient;
+use cgp::core::component::{UseContext, UseDelegate};
+use cgp::core::error::{ErrorRaiserComponent, ErrorTypeComponent};
 use cgp::core::types::impls::WithType;
 use cgp::prelude::*;
 use hermes_chain_type_components::traits::types::address::AddressTypeComponent;
+use hermes_error::impls::ProvideHermesError;
+use hermes_ethereum_chain_components::impls::account_proof::CanBuildAccountProof;
+use hermes_ethereum_chain_components::traits::fields::beacon::{
+    BeaconApiClientGetterComponent, HasBeaconApiClient,
+};
+use hermes_ethereum_chain_components::traits::fields::ibc_contract_address::IbcContractAddressGetterComponent;
 use hermes_ethereum_chain_components::traits::fields::provider::AlloyProviderGetter;
+
+use crate::contexts::error::HandleEthereumChainError;
 
 #[derive(HasField)]
 pub struct EthereumChain {
@@ -21,12 +31,23 @@ impl HasComponents for EthereumChain {
 
 delegate_components! {
     EthereumChainComponents {
+        ErrorTypeComponent: ProvideHermesError,
+        ErrorRaiserComponent: UseDelegate<HandleEthereumChainError>,
         AddressTypeComponent: WithType<Address>,
+        [
+            BeaconApiClientGetterComponent,
+            IbcContractAddressGetterComponent,
+        ]:
+            UseContext,
     }
 }
 
 impl AlloyProviderGetter<EthereumChain> for EthereumChainComponents {
-    fn provider(chain: &EthereumChain) ->  &dyn Provider {
+    fn provider(chain: &EthereumChain) -> &dyn Provider {
         chain.provider.as_ref()
     }
 }
+
+pub trait CanUseEthereumChain: Async + HasBeaconApiClient + CanBuildAccountProof {}
+
+impl CanUseEthereumChain for EthereumChain {}

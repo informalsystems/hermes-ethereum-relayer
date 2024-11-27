@@ -16,6 +16,7 @@ bincode = { workspace = true }
 beacon-api = { workspace = true }
 
 cgp = { workspace = true }
+hermes-error = { workspace = true }
 hermes-test-components = { workspace = true }
 hermes-runtime-components = { workspace = true }
 hermes-chain-components = { workspace = true }

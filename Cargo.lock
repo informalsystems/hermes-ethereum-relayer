@@ -4472,6 +4472,7 @@ dependencies = [
  "hermes-chain-type-components",
  "hermes-cosmos-chain-components",
  "hermes-encoding-components",
+ "hermes-error",
  "hermes-ethereum-chain-components",
  "hermes-runtime-components",
  "hermes-test-components",

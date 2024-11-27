@@ -23,9 +23,6 @@ pub trait CanBuildAccountProof: HasErrorType {
     ) -> Result<(AccountProof, [StorageProof; N]), Self::Error>;
 }
 
-#[derive(Debug)]
-pub struct EmptyMerkleKeyPath;
-
 impl<Chain> CanBuildAccountProof for Chain
 where
     Chain: Async
@@ -35,10 +32,8 @@ where
         + HasIbcContractAddress
         + CanRaiseError<BeaconError>
         + CanRaiseError<RpcError<TransportErrorKind>>
-        + CanRaiseError<EmptyMerkleKeyPath>
         + CanRaiseError<&'static str>
-        + CanRaiseError<String>
-        ,
+        + CanRaiseError<String>,
 {
     async fn account_proof<const N: usize>(
         &self,
@@ -63,7 +58,7 @@ where
                     // take only the first key_path from a merkle path
                     // https://github.com/gjermundgaraba/union/blob/10355e6/light-clients/ethereum-light-client/src/client.rs#L87
                     .next()
-                    .ok_or_else(|| Chain::raise_error(EmptyMerkleKeyPath))?;
+                    .ok_or_else(|| Chain::raise_error("empty merkle key path"))?;
 
                 let key = ibc_commitment_key_v2(key_path.into(), IBC_HANDLER_COMMITMENTS_SLOT)
                     .to_be_bytes()
@@ -74,7 +69,7 @@ where
             .collect::<Result<_, Chain::Error>>()?;
 
         let response = provider
-            .get_proof(ibc_contract_address, keys)
+            .get_proof(ibc_contract_address.clone(), keys)
             .block_id(execution_height.into())
             .await
             .map_err(Chain::raise_error)?;
@@ -88,19 +83,19 @@ where
                 .collect(),
         };
 
-        let proofs = <[_; N]>::try_from(response.storage_proof)
-            .map_err(|x| Chain::raise_error(format!("length should be {} but got {}", N, x.len())))?;
+        let proofs = <[_; N]>::try_from(response.storage_proof).map_err(|x| {
+            Chain::raise_error(format!("length should be {} but got {}", N, x.len()))
+        })?;
 
-        let storage_proofs = proofs
-            .map(|proof| StorageProof {
-                key: U256::from_be_bytes(proof.key.as_b256().0),
-                value: U256::from_limbs(proof.value.into_limbs()),
-                proof: proof
-                    .proof
-                    .into_iter()
-                    .map(|bytes| bytes.to_vec())
-                    .collect(),
-            });
+        let storage_proofs = proofs.map(|proof| StorageProof {
+            key: U256::from_be_bytes(proof.key.as_b256().0),
+            value: U256::from_limbs(proof.value.into_limbs()),
+            proof: proof
+                .proof
+                .into_iter()
+                .map(|bytes| bytes.to_vec())
+                .collect(),
+        });
 
         Ok((account_proof, storage_proofs))
     }
