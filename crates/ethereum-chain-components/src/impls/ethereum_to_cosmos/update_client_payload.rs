@@ -1,12 +1,29 @@
 use cgp::prelude::HasErrorType;
+use eth_protos::union::ibc::lightclients::ethereum::v1::{
+    LightClientHeader as LightClientHeaderProto, LightClientUpdate as LightClientUpdateProto,
+    SyncCommittee as SyncCommitteeProto,
+};
 use hermes_chain_components::traits::payload_builders::update_client::UpdateClientPayloadBuilder;
 use hermes_chain_components::traits::types::client_state::HasClientStateType;
 use hermes_chain_components::traits::types::height::HasHeightType;
 use hermes_chain_components::traits::types::update_client::HasUpdateClientPayloadType;
+use unionlabs::ethereum::beacon::light_client_bootstrap::LightClientBootstrap;
 use unionlabs::ethereum::config::{
     BYTES_PER_LOGS_BLOOM, MAX_EXTRA_DATA_BYTES, SYNC_COMMITTEE_SIZE,
 };
+use unionlabs::ibc::core::client::height::Height;
+use unionlabs::ibc::lightclients::ethereum::account_update::AccountUpdate;
+use unionlabs::ibc::lightclients::ethereum::header::Header;
+use unionlabs::ibc::lightclients::ethereum::light_client_header::LightClientHeader;
+use unionlabs::ibc::lightclients::ethereum::light_client_update::LightClientUpdate;
+use unionlabs::ibc::lightclients::ethereum::sync_committee::SyncCommittee;
+use unionlabs::ibc::lightclients::ethereum::trusted_sync_committee::{
+    ActiveSyncCommittee, TrustedSyncCommittee,
+};
 
+use crate::impls::account_proof::CanBuildAccountProof;
+use crate::traits::fields::beacon::HasBeaconApiClient;
+use crate::traits::fields::provider::HasAlloyProvider;
 use crate::traits::types::beacon_preset::HasBeaconPreset;
 use crate::types::eth::update_client_payload::EthUpdateClientPayload;
 
@@ -19,17 +36,264 @@ where
             Counterparty,
             UpdateClientPayload = EthUpdateClientPayload<Preset>,
         > + HasClientStateType<Counterparty>
-        + HasHeightType
+        + HasHeightType<Height = Height>
         + HasBeaconPreset<BeaconPreset = Preset>
-        + HasErrorType,
-    Preset: SYNC_COMMITTEE_SIZE + BYTES_PER_LOGS_BLOOM + MAX_EXTRA_DATA_BYTES,
+        + HasErrorType<Error = String>
+        + CanBuildAccountProof
+        + HasBeaconApiClient
+        + HasAlloyProvider,
+    Preset: SYNC_COMMITTEE_SIZE + BYTES_PER_LOGS_BLOOM + MAX_EXTRA_DATA_BYTES + Clone,
 {
     async fn build_update_client_payload(
-        _chain: &Chain,
-        _trusted_height: &Chain::Height,
-        _target_height: &Chain::Height,
+        chain: &Chain,
+        trusted_height: &Chain::Height,
+        target_height: &Chain::Height,
         _client_state: Chain::ClientState,
     ) -> Result<EthUpdateClientPayload<Preset>, Chain::Error> {
-        todo!()
+        if target_height.revision_number != trusted_height.revision_number {
+            return Err("revision number mismatch".to_string());
+        }
+
+        // we only update at finality headers.
+        // we can't skip header updates more than a period, because sync committee changes every period.
+        // this is similar to validator set change in Tendermint light client beyond trust level.
+
+        let spec = chain
+            .beacon_api_client()
+            .spec()
+            .await
+            .map_err(|e| e.to_string())?
+            .data;
+
+        let mut trusted_sync_committee = {
+            let trusted_header = chain
+                .beacon_api_client()
+                .header(trusted_height.revision_height.into())
+                .await
+                .map_err(|e| e.to_string())?
+                .data;
+
+            let trusted_bootstrap = chain
+                .beacon_api_client()
+                .bootstrap(trusted_header.root)
+                .await
+                .map_err(|e| e.to_string())?
+                .data;
+
+            let light_client_update = {
+                let current_period = trusted_height.revision_height / spec.period();
+
+                let light_client_updates = chain
+                    .beacon_api_client()
+                    .light_client_updates(current_period, 1)
+                    .await
+                    .map_err(|x| x.to_string())?;
+
+                let [update] = <[_; 1]>::try_from(light_client_updates.0)
+                    .map_err(|x| format!("length should be 1 but got {}", x.len()))?;
+
+                if !(update.data.finalized_header.beacon.slot <= trusted_height.revision_height
+                    && trusted_height.revision_height
+                        < update.data.finalized_header.beacon.slot + spec.period())
+                {
+                    return Err("period change update is not for the current period".to_string());
+                }
+
+                update.data.clone()
+            };
+
+            let sync_committee = if light_client_update.finalized_header.beacon.slot
+                == trusted_height.revision_height
+            {
+                // trusted slot with a period change
+                ActiveSyncCommittee::Next(
+                    SyncCommittee::try_from(SyncCommitteeProto::from(
+                        light_client_update
+                            .next_sync_committee
+                            .ok_or_else(|| "missing finality update".to_string())?,
+                    ))
+                    .map_err(|e| e.to_string())?,
+                )
+            } else {
+                // trusted slot within an period
+                ActiveSyncCommittee::Current(
+                    SyncCommittee::try_from(SyncCommitteeProto::from(
+                        trusted_bootstrap.current_sync_committee,
+                    ))
+                    .map_err(|e| e.to_string())?,
+                )
+            };
+
+            TrustedSyncCommittee {
+                trusted_height: *trusted_height,
+                sync_committee,
+            }
+        };
+
+        let headers = {
+            let target_header = chain
+                .beacon_api_client()
+                .header(target_height.revision_height.into())
+                .await
+                .map_err(|e| e.to_string())?
+                .data;
+
+            let unbounded_target_bootstrap = chain
+                .beacon_api_client()
+                .bootstrap(target_header.root)
+                .await
+                .map_err(|e| e.to_string())?
+                .data;
+
+            let target_bootstrap = LightClientBootstrap {
+                header: LightClientHeader::try_from(LightClientHeaderProto::from(
+                    unbounded_target_bootstrap.header,
+                ))
+                .map_err(|e| e.to_string())?,
+                current_sync_committee: SyncCommittee::try_from(SyncCommitteeProto::from(
+                    unbounded_target_bootstrap.current_sync_committee,
+                ))
+                .map_err(|e| e.to_string())?,
+                current_sync_committee_branch: unbounded_target_bootstrap
+                    .current_sync_committee_branch,
+            };
+
+            let trust_period = trusted_height.revision_height / spec.period();
+            let target_period = target_height.revision_height / spec.period();
+
+            let light_client_updates = chain
+                .beacon_api_client()
+                .light_client_updates(trust_period + 1, target_period - trust_period)
+                .await
+                .map_err(|x| x.to_string())?
+                .0
+                .into_iter()
+                .map(|x| x.data)
+                .collect::<Vec<_>>();
+
+            if light_client_updates.len() as u64 != (target_period - trust_period + 1) {
+                return Err("missing light client updates".to_string());
+            }
+
+            let first_update_slot = light_client_updates
+                .first()
+                .unwrap()
+                .finalized_header
+                .beacon
+                .slot;
+
+            let last_update_slot = light_client_updates
+                .last()
+                .unwrap()
+                .finalized_header
+                .beacon
+                .slot;
+
+            if !(trusted_height.revision_height < first_update_slot
+                && first_update_slot <= target_height.revision_height + spec.period())
+            {
+                return Err("first update is not for the next period of trusted height".to_string());
+            }
+
+            if !(target_height.revision_height <= last_update_slot
+                && last_update_slot < target_height.revision_height + spec.period())
+            {
+                return Err(
+                    "last update is not for the previous period of target height".to_string(),
+                );
+            }
+
+            let n_headers = if target_height.revision_height == last_update_slot {
+                light_client_updates.len()
+            } else {
+                light_client_updates.len() + 1
+            };
+
+            let mut headers = Vec::with_capacity(n_headers + 1);
+
+            for update in light_client_updates {
+                let new_trusted_sync_committee = TrustedSyncCommittee {
+                    trusted_height: Height {
+                        revision_number: trusted_height.revision_number,
+                        revision_height: update.finalized_header.beacon.slot,
+                    },
+                    sync_committee: if let Some(sync_committee) =
+                        update.next_sync_committee.as_ref()
+                    {
+                        ActiveSyncCommittee::Next(
+                            SyncCommittee::try_from(SyncCommitteeProto::from(
+                                sync_committee.clone(),
+                            ))
+                            .map_err(|e| e.to_string())?,
+                        )
+                    } else {
+                        return Err("missing next sync committee".to_string());
+                    },
+                };
+
+                let account_update = AccountUpdate {
+                    account_proof: chain
+                        .account_proof(update.finalized_header.beacon.slot, [])
+                        .await?
+                        .0,
+                };
+
+                let consensus_update =
+                    LightClientUpdate::try_from(LightClientUpdateProto::from(update))
+                        .map_err(|e| e.to_string())?;
+
+                headers.push(Header {
+                    trusted_sync_committee,
+                    consensus_update,
+                    account_update,
+                });
+
+                trusted_sync_committee = new_trusted_sync_committee;
+            }
+
+            if target_height.revision_height > last_update_slot {
+                let new_trusted_sync_committee = TrustedSyncCommittee {
+                    trusted_height: Height {
+                        revision_number: trusted_height.revision_number,
+                        revision_height: target_height.revision_height,
+                    },
+                    sync_committee: ActiveSyncCommittee::Current(
+                        trusted_sync_committee.sync_committee.get().clone(),
+                    ),
+                };
+
+                let consensus_update = LightClientUpdate {
+                    attested_header: target_bootstrap.header.clone(),
+                    next_sync_committee: None,
+                    next_sync_committee_branch: None,
+                    finalized_header: target_bootstrap.header,
+                    finality_branch: todo!(),
+                    sync_aggregate: todo!(),
+                    signature_slot: todo!(),
+                };
+
+                let account_update = AccountUpdate {
+                    account_proof: chain
+                        .account_proof(target_height.revision_height, [])
+                        .await?
+                        .0,
+                };
+
+                headers.push(Header {
+                    trusted_sync_committee,
+                    consensus_update,
+                    account_update,
+                });
+
+                trusted_sync_committee = new_trusted_sync_committee;
+            }
+
+            headers
+        };
+
+        Ok(EthUpdateClientPayload {
+            headers,
+            trusted_committee: trusted_sync_committee,
+        })
     }
 }
