@@ -46,6 +46,7 @@ where
     async fn build_update_client_payload(
         chain: &Chain,
         trusted_height: &Chain::Height,
+        // TODO(rano): maybe this should be called minimum target height
         target_height: &Chain::Height,
         _client_state: Chain::ClientState,
     ) -> Result<EthUpdateClientPayload<Preset>, Chain::Error> {
@@ -53,7 +54,7 @@ where
             return Err("revision number mismatch".to_string());
         }
 
-        // TODO(rano): need to know the finality update at the target height. so, fetching the latest one.
+        // need to know the finality update at the target height. so, fetching the latest one.
         // so, it is possible that the update is in the future of the target height.
 
         let finality_update = chain
