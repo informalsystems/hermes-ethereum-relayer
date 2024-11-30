@@ -1,21 +1,20 @@
 use cgp::prelude::HasErrorType;
 use eth_protos::union::ibc::lightclients::ethereum::v1::{
-    LightClientHeader as LightClientHeaderProto, LightClientUpdate as LightClientUpdateProto,
-    SyncCommittee as SyncCommitteeProto,
+    LightClientUpdate as LightClientUpdateProto, SyncCommittee as SyncCommitteeProto,
 };
 use hermes_chain_components::traits::payload_builders::update_client::UpdateClientPayloadBuilder;
 use hermes_chain_components::traits::types::client_state::HasClientStateType;
 use hermes_chain_components::traits::types::height::HasHeightType;
 use hermes_chain_components::traits::types::update_client::HasUpdateClientPayloadType;
-use unionlabs::ethereum::beacon::light_client_bootstrap::LightClientBootstrap;
 use unionlabs::ethereum::config::{
     BYTES_PER_LOGS_BLOOM, MAX_EXTRA_DATA_BYTES, SYNC_COMMITTEE_SIZE,
 };
 use unionlabs::ibc::core::client::height::Height;
 use unionlabs::ibc::lightclients::ethereum::account_update::AccountUpdate;
 use unionlabs::ibc::lightclients::ethereum::header::Header;
-use unionlabs::ibc::lightclients::ethereum::light_client_header::LightClientHeader;
-use unionlabs::ibc::lightclients::ethereum::light_client_update::LightClientUpdate;
+use unionlabs::ibc::lightclients::ethereum::light_client_update::{
+    LightClientUpdate, UnboundedLightClientUpdate,
+};
 use unionlabs::ibc::lightclients::ethereum::sync_committee::SyncCommittee;
 use unionlabs::ibc::lightclients::ethereum::trusted_sync_committee::{
     ActiveSyncCommittee, TrustedSyncCommittee,
@@ -53,6 +52,25 @@ where
         if target_height.revision_number != trusted_height.revision_number {
             return Err("revision number mismatch".to_string());
         }
+
+        // TODO(rano): need to know the finality update at the target height. so, fetching the latest one.
+        // so, it is possible that the update is in the future of the target height.
+
+        let finality_update = chain
+            .beacon_api_client()
+            .finality_update()
+            .await
+            .map_err(|e| e.to_string())?
+            .data;
+
+        if !(target_height.revision_height <= finality_update.finalized_header.beacon.slot) {
+            return Err("target height is not finalized yet".to_string());
+        }
+
+        let target_height = Chain::Height {
+            revision_number: trusted_height.revision_number,
+            revision_height: finality_update.finalized_header.beacon.slot,
+        };
 
         // we only update at finality headers.
         // we can't skip header updates more than a period, because sync committee changes every period.
@@ -131,33 +149,6 @@ where
         };
 
         let headers = {
-            let target_header = chain
-                .beacon_api_client()
-                .header(target_height.revision_height.into())
-                .await
-                .map_err(|e| e.to_string())?
-                .data;
-
-            let unbounded_target_bootstrap = chain
-                .beacon_api_client()
-                .bootstrap(target_header.root)
-                .await
-                .map_err(|e| e.to_string())?
-                .data;
-
-            let target_bootstrap = LightClientBootstrap {
-                header: LightClientHeader::try_from(LightClientHeaderProto::from(
-                    unbounded_target_bootstrap.header,
-                ))
-                .map_err(|e| e.to_string())?,
-                current_sync_committee: SyncCommittee::try_from(SyncCommitteeProto::from(
-                    unbounded_target_bootstrap.current_sync_committee,
-                ))
-                .map_err(|e| e.to_string())?,
-                current_sync_committee_branch: unbounded_target_bootstrap
-                    .current_sync_committee_branch,
-            };
-
             let trust_period = trusted_height.revision_height / spec.period();
             let target_period = target_height.revision_height / spec.period();
 
@@ -262,15 +253,20 @@ where
                     ),
                 };
 
-                let consensus_update = LightClientUpdate {
-                    attested_header: target_bootstrap.header.clone(),
+                let unbounded_consensus_update = UnboundedLightClientUpdate {
+                    attested_header: finality_update.attested_header,
                     next_sync_committee: None,
                     next_sync_committee_branch: None,
-                    finalized_header: target_bootstrap.header,
-                    finality_branch: todo!(),
-                    sync_aggregate: todo!(),
-                    signature_slot: todo!(),
+                    finalized_header: finality_update.finalized_header,
+                    finality_branch: finality_update.finality_branch,
+                    sync_aggregate: finality_update.sync_aggregate,
+                    signature_slot: finality_update.signature_slot,
                 };
+
+                let consensus_update = LightClientUpdate::try_from(LightClientUpdateProto::from(
+                    unbounded_consensus_update,
+                ))
+                .map_err(|e| e.to_string())?;
 
                 let account_update = AccountUpdate {
                     account_proof: chain
