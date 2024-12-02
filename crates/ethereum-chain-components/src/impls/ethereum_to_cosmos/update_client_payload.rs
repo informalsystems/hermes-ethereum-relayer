@@ -215,23 +215,21 @@ where
             let mut headers = Vec::with_capacity(n_headers + 1);
 
             for update in light_client_updates {
+                let next_sync_committee = update
+                    .next_sync_committee
+                    .as_ref()
+                    .ok_or_else(|| "missing next sync committee after period change")?
+                    .clone();
+
                 let new_trusted_sync_committee = TrustedSyncCommittee {
                     trusted_height: Height {
                         revision_number: trusted_height.revision_number,
                         revision_height: update.finalized_header.beacon.slot,
                     },
-                    sync_committee: if let Some(sync_committee) =
-                        update.next_sync_committee.as_ref()
-                    {
-                        ActiveSyncCommittee::Next(
-                            SyncCommittee::try_from(SyncCommitteeProto::from(
-                                sync_committee.clone(),
-                            ))
+                    sync_committee: ActiveSyncCommittee::Next(
+                        SyncCommittee::try_from(SyncCommitteeProto::from(next_sync_committee))
                             .map_err(|e| e.to_string())?,
-                        )
-                    } else {
-                        return Err("missing next sync committee".to_string());
-                    },
+                    ),
                 };
 
                 let account_update = AccountUpdate {
