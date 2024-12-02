@@ -4456,6 +4456,7 @@ dependencies = [
  "hermes-runtime-components",
  "hermes-test-components",
  "ics008-wasm-client",
+ "protos",
  "serde",
  "unionlabs",
 ]

@@ -33,6 +33,7 @@ sp1-prover = { version = "3.0.0", default-features = false }
 
 beacon-api = { git = "https://github.com/unionlabs/union", rev = "22495bd" }
 unionlabs = { git = "https://github.com/unionlabs/union", rev = "22495bd" }
+eth-protos = { package = "protos", git = "https://github.com/unionlabs/union", rev = "22495bd" }
 ics008-wasm-client = { git = "https://github.com/unionlabs/union", rev = "22495bd" }
 
 hermes-prover-components = { version = "0.1.0" }
