@@ -175,49 +175,48 @@ where
             let trust_period = trusted_height.revision_height / spec.period();
             let target_period = target_height.revision_height / spec.period();
 
-            let light_client_updates = chain
-                .beacon_api_client()
-                .light_client_updates(trust_period + 1, target_period - trust_period)
-                .await
-                .map_err(Chain::raise_error)?
-                .0
-                .into_iter()
-                .map(|x| x.data)
-                .collect::<Vec<_>>();
+            let light_client_updates = if trust_period == target_period {
+                // within the same period, no next sync committee changes
+                vec![]
+            } else {
+                let updates = chain
+                    .beacon_api_client()
+                    .light_client_updates(trust_period + 1, target_period - trust_period)
+                    .await
+                    .map_err(Chain::raise_error)?
+                    .0
+                    .into_iter()
+                    .map(|x| x.data)
+                    .collect::<Vec<_>>();
 
-            if light_client_updates.len() as u64 != (target_period - trust_period + 1) {
-                return Err(Chain::raise_error("missing light client updates"));
-            }
+                if updates.len() as u64 != (target_period - trust_period + 1) {
+                    return Err(Chain::raise_error("missing light client updates"));
+                }
 
-            let first_update_slot = light_client_updates
-                .first()
-                .unwrap()
-                .finalized_header
-                .beacon
-                .slot;
+                // there is at least one update
 
-            let last_update_slot = light_client_updates
-                .last()
-                .unwrap()
-                .finalized_header
-                .beacon
-                .slot;
+                let first_update_slot = updates.first().unwrap().finalized_header.beacon.slot;
 
-            if !(trusted_height.revision_height < first_update_slot
-                && first_update_slot <= target_height.revision_height + spec.period())
-            {
-                return Err(Chain::raise_error(
-                    "first update is not for the next period of trusted height",
-                ));
-            }
+                let last_update_slot = updates.last().unwrap().finalized_header.beacon.slot;
 
-            if !(target_height.revision_height <= last_update_slot
-                && last_update_slot < target_height.revision_height + spec.period())
-            {
-                return Err(Chain::raise_error(
-                    "last update is not for the previous period of target height",
-                ));
-            }
+                if !(trusted_height.revision_height < first_update_slot
+                    && first_update_slot <= target_height.revision_height + spec.period())
+                {
+                    return Err(Chain::raise_error(
+                        "first update is not for the next period of trusted height",
+                    ));
+                }
+
+                if !(target_height.revision_height <= last_update_slot
+                    && last_update_slot < target_height.revision_height + spec.period())
+                {
+                    return Err(Chain::raise_error(
+                        "last update is not for the previous period of target height",
+                    ));
+                }
+
+                updates
+            };
 
             let n_headers = if target_height.revision_height == last_update_slot {
                 light_client_updates.len()
@@ -225,7 +224,7 @@ where
                 light_client_updates.len() + 1
             };
 
-            let mut headers = Vec::with_capacity(n_headers + 1);
+            let mut headers = Vec::with_capacity(n_headers);
 
             for update in light_client_updates {
                 let next_sync_committee = update
