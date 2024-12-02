@@ -58,8 +58,14 @@ where
         target_height: &Chain::Height,
         _client_state: Chain::ClientState,
     ) -> Result<EthUpdateClientPayload<Preset>, Chain::Error> {
-        if target_height.revision_number != trusted_height.revision_number {
+        if !(target_height.revision_number == trusted_height.revision_number) {
             return Err(Chain::raise_error("revision number mismatch"));
+        }
+
+        if !(trusted_height.revision_height < target_height.revision_height) {
+            return Err(Chain::raise_error(
+                "target height is less than trusted height",
+            ));
         }
 
         // need to know the finality update at the target height. so, fetching the latest one.
@@ -192,7 +198,7 @@ where
                     .map(|x| x.data)
                     .collect::<Vec<_>>();
 
-                if updates.len() as u64 != (target_period - trust_period + 1) {
+                if !(updates.len() as u64 == (target_period - trust_period + 1)) {
                     return Err(Chain::raise_error("missing light client updates"));
                 }
 
