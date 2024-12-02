@@ -1,4 +1,4 @@
-use cgp::prelude::HasErrorType;
+use cgp::prelude::{CanRaiseError, HasErrorType};
 use eth_protos::union::ibc::lightclients::ethereum::v1::{
     LightClientUpdate as LightClientUpdateProto, SyncCommittee as SyncCommitteeProto,
 };
@@ -13,9 +13,11 @@ use unionlabs::ibc::core::client::height::Height;
 use unionlabs::ibc::lightclients::ethereum::account_update::AccountUpdate;
 use unionlabs::ibc::lightclients::ethereum::header::Header;
 use unionlabs::ibc::lightclients::ethereum::light_client_update::{
-    LightClientUpdate, UnboundedLightClientUpdate,
+    LightClientUpdate, TryFromLightClientUpdateError, UnboundedLightClientUpdate,
 };
-use unionlabs::ibc::lightclients::ethereum::sync_committee::SyncCommittee;
+use unionlabs::ibc::lightclients::ethereum::sync_committee::{
+    SyncCommittee, TryFromSyncCommitteeError,
+};
 use unionlabs::ibc::lightclients::ethereum::trusted_sync_committee::{
     ActiveSyncCommittee, TrustedSyncCommittee,
 };
@@ -37,7 +39,12 @@ where
         > + HasClientStateType<Counterparty>
         + HasHeightType<Height = Height>
         + HasBeaconPreset<BeaconPreset = Preset>
-        + HasErrorType<Error = String>
+        + HasErrorType
+        + CanRaiseError<&'static str>
+        + CanRaiseError<String>
+        + CanRaiseError<TryFromLightClientUpdateError>
+        + CanRaiseError<TryFromSyncCommitteeError>
+        + CanRaiseError<beacon_api::errors::Error>
         + CanBuildAccountProof
         + HasBeaconApiClient
         + HasAlloyProvider,
@@ -51,7 +58,7 @@ where
         _client_state: Chain::ClientState,
     ) -> Result<EthUpdateClientPayload<Preset>, Chain::Error> {
         if target_height.revision_number != trusted_height.revision_number {
-            return Err("revision number mismatch".to_string());
+            return Err(Chain::raise_error("revision number mismatch"));
         }
 
         // need to know the finality update at the target height. so, fetching the latest one.
@@ -61,11 +68,11 @@ where
             .beacon_api_client()
             .finality_update()
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(Chain::raise_error)?
             .data;
 
         if !(target_height.revision_height <= finality_update.finalized_header.beacon.slot) {
-            return Err("target height is not finalized yet".to_string());
+            return Err(Chain::raise_error("target height is not finalized yet"));
         }
 
         let target_height = Chain::Height {
@@ -81,7 +88,7 @@ where
             .beacon_api_client()
             .spec()
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(Chain::raise_error)?
             .data;
 
         let mut trusted_sync_committee = {
@@ -89,14 +96,14 @@ where
                 .beacon_api_client()
                 .header(trusted_height.revision_height.into())
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(Chain::raise_error)?
                 .data;
 
             let trusted_bootstrap = chain
                 .beacon_api_client()
                 .bootstrap(trusted_header.root)
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(Chain::raise_error)?
                 .data;
 
             let light_client_update = {
@@ -106,16 +113,19 @@ where
                     .beacon_api_client()
                     .light_client_updates(current_period, 1)
                     .await
-                    .map_err(|x| x.to_string())?;
+                    .map_err(Chain::raise_error)?;
 
-                let [update] = <[_; 1]>::try_from(light_client_updates.0)
-                    .map_err(|x| format!("length should be 1 but got {}", x.len()))?;
+                let [update] = <[_; 1]>::try_from(light_client_updates.0).map_err(|x| {
+                    Chain::raise_error(format!("length should be 1 but got {}", x.len()))
+                })?;
 
                 if !(update.data.finalized_header.beacon.slot <= trusted_height.revision_height
                     && trusted_height.revision_height
                         < update.data.finalized_header.beacon.slot + spec.period())
                 {
-                    return Err("period change update is not for the current period".to_string());
+                    return Err(Chain::raise_error(
+                        "period change update is not for the current period",
+                    ));
                 }
 
                 update.data.clone()
@@ -129,9 +139,9 @@ where
                     SyncCommittee::try_from(SyncCommitteeProto::from(
                         light_client_update
                             .next_sync_committee
-                            .ok_or_else(|| "missing finality update".to_string())?,
+                            .ok_or_else(|| Chain::raise_error("missing finality update"))?,
                     ))
-                    .map_err(|e| e.to_string())?,
+                    .map_err(Chain::raise_error)?,
                 )
             } else {
                 // trusted slot within an period
@@ -139,7 +149,7 @@ where
                     SyncCommittee::try_from(SyncCommitteeProto::from(
                         trusted_bootstrap.current_sync_committee,
                     ))
-                    .map_err(|e| e.to_string())?,
+                    .map_err(Chain::raise_error)?,
                 )
             };
 
@@ -168,14 +178,14 @@ where
                 .beacon_api_client()
                 .light_client_updates(trust_period + 1, target_period - trust_period)
                 .await
-                .map_err(|x| x.to_string())?
+                .map_err(Chain::raise_error)?
                 .0
                 .into_iter()
                 .map(|x| x.data)
                 .collect::<Vec<_>>();
 
             if light_client_updates.len() as u64 != (target_period - trust_period + 1) {
-                return Err("missing light client updates".to_string());
+                return Err(Chain::raise_error("missing light client updates"));
             }
 
             let first_update_slot = light_client_updates
@@ -195,15 +205,17 @@ where
             if !(trusted_height.revision_height < first_update_slot
                 && first_update_slot <= target_height.revision_height + spec.period())
             {
-                return Err("first update is not for the next period of trusted height".to_string());
+                return Err(Chain::raise_error(
+                    "first update is not for the next period of trusted height",
+                ));
             }
 
             if !(target_height.revision_height <= last_update_slot
                 && last_update_slot < target_height.revision_height + spec.period())
             {
-                return Err(
-                    "last update is not for the previous period of target height".to_string(),
-                );
+                return Err(Chain::raise_error(
+                    "last update is not for the previous period of target height",
+                ));
             }
 
             let n_headers = if target_height.revision_height == last_update_slot {
@@ -218,7 +230,9 @@ where
                 let next_sync_committee = update
                     .next_sync_committee
                     .as_ref()
-                    .ok_or_else(|| "missing next sync committee after period change")?
+                    .ok_or_else(|| {
+                        Chain::raise_error("missing next sync committee after period change")
+                    })?
                     .clone();
 
                 let new_trusted_sync_committee = TrustedSyncCommittee {
@@ -228,7 +242,7 @@ where
                     },
                     sync_committee: ActiveSyncCommittee::Next(
                         SyncCommittee::try_from(SyncCommitteeProto::from(next_sync_committee))
-                            .map_err(|e| e.to_string())?,
+                            .map_err(Chain::raise_error)?,
                     ),
                 };
 
@@ -241,7 +255,7 @@ where
 
                 let consensus_update =
                     LightClientUpdate::try_from(LightClientUpdateProto::from(update))
-                        .map_err(|e| e.to_string())?;
+                        .map_err(Chain::raise_error)?;
 
                 headers.push(Header {
                     trusted_sync_committee,
@@ -276,7 +290,7 @@ where
                 let consensus_update = LightClientUpdate::try_from(LightClientUpdateProto::from(
                     unbounded_consensus_update,
                 ))
-                .map_err(|e| e.to_string())?;
+                .map_err(Chain::raise_error)?;
 
                 let account_update = AccountUpdate {
                     account_proof: chain
