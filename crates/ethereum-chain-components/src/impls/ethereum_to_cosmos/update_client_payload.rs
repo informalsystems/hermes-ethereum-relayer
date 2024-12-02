@@ -1,3 +1,4 @@
+use beacon_api::errors::Error as BeaconError;
 use cgp::prelude::{CanRaiseError, HasErrorType};
 use eth_protos::union::ibc::lightclients::ethereum::v1::{
     LightClientUpdate as LightClientUpdateProto, SyncCommittee as SyncCommitteeProto,
@@ -44,7 +45,7 @@ where
         + CanRaiseError<String>
         + CanRaiseError<TryFromLightClientUpdateError>
         + CanRaiseError<TryFromSyncCommitteeError>
-        + CanRaiseError<beacon_api::errors::Error>
+        + CanRaiseError<BeaconError>
         + CanBuildAccountProof
         + HasBeaconApiClient
         + HasAlloyProvider,
