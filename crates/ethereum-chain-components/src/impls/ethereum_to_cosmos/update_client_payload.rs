@@ -166,10 +166,13 @@ where
         // 1. the trusted height is in [1, 64) and the target height is 217,
         // we perform updates for 64, 128, 192, 217
         // where 64, 128 and 192 are the period changes (with next sync committee)
-        // and 217 is the target height (without next sync committee, i.e. current sync committee is trusted)
+        // and 217 is the target height (without next sync committee, i.e. current sync committee is trusted).
         //
         // 2. if the trusted height is in [64, 128) and the target height is 192,
-        // we perform updates for 128 and 192 (with next sync committee)
+        // we perform updates for 128 and 192 (with next sync committee).
+        //
+        // 3. if the trusted height i in [64, 128) and the target height is 120,
+        // we perform update only for 120.
 
         let headers = {
             let trust_period = trusted_height.revision_height / spec.period();
