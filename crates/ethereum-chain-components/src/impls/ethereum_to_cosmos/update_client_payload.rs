@@ -184,9 +184,10 @@ where
             let trust_period = trusted_height.revision_height / spec.period();
             let target_period = target_height.revision_height / spec.period();
 
-            let light_client_updates = if trust_period == target_period {
+            let (light_client_updates, is_target_period_boundary) = if trust_period == target_period
+            {
                 // within the same period, no next sync committee changes
-                vec![]
+                (vec![], false)
             } else {
                 let updates = chain
                     .beacon_api_client()
@@ -224,16 +225,14 @@ where
                     ));
                 }
 
-                updates
+                (updates, target_height.revision_height == last_update_slot)
             };
 
-            let n_headers = if target_height.revision_height == last_update_slot {
+            let mut headers = Vec::with_capacity(if is_target_period_boundary {
                 light_client_updates.len()
             } else {
                 light_client_updates.len() + 1
-            };
-
-            let mut headers = Vec::with_capacity(n_headers);
+            });
 
             for update in light_client_updates {
                 let next_sync_committee = update
@@ -275,7 +274,7 @@ where
                 trusted_sync_committee = new_trusted_sync_committee;
             }
 
-            if target_height.revision_height > last_update_slot {
+            if !is_target_period_boundary {
                 let new_trusted_sync_committee = TrustedSyncCommittee {
                     trusted_height: Height {
                         revision_number: trusted_height.revision_number,
